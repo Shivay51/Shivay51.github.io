@@ -1247,9 +1247,11 @@
     var high = parseFloat(elHigh.value);
     var low = parseFloat(elLow.value);
     if(isNaN(high) || isNaN(low)){
-      elStatus.textContent = 'Enter both High and Low.';
+      elStatus.textContent = 'Live/saved data નથી — આજના સાચા High/Low જાતે નાખો, અથવા live મેળવવા GitHub Pages/app link વાપરો.';
       updateTicker(high, low);
       renderTrend(high, low);
+      if(elResist){ renderZone(elResist, [], 'R', NaN); }
+      if(elSupport){ renderZone(elSupport, [], 'S', NaN); }
       if(elPriceChartCard){ elPriceChartCard.hidden = true; }
       return;
     }
@@ -1527,15 +1529,21 @@
       elHigh.value = savedHigh;
       elLow.value = savedLow;
       elStatus.textContent = 'Remembered your last entered High/Low.';
-    } else if(currentMarket === 'mcx'){
-      elHigh.value = '153444';
-      elLow.value = '150483';
-    } else if(currentMarket === 'nifty'){
-      elHigh.value = '23389.15';
-      elLow.value = '23286.60';
     } else {
-      elHigh.value = '4404.50';
-      elLow.value = '4372.65';
+      // No live data, no previously-saved entry -- leave the fields blank
+      // rather than silently filling in old placeholder numbers as if they
+      // were today's real values (that was the actual bug: on a channel
+      // where the live fetch can never succeed -- e.g. the Claude Artifact
+      // link's own sandbox blocks all outside network calls -- this used to
+      // fall back to stale hardcoded demo numbers with no clear warning,
+      // which looked like a normal calculated result but wasn't today's
+      // real price at all). recompute() already shows an honest "Enter
+      // both High and Low." message for blank fields, so nothing further
+      // is faked here.
+      elHigh.value = '';
+      elLow.value = '';
+      // recompute() (called right after this) shows the honest
+      // "enter High/Low yourself" message for blank fields.
     }
   }
 
