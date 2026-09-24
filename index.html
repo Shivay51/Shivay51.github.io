@@ -1269,6 +1269,10 @@
     var sym = curSym();
     if(currentMarket === 'spot' && getLiveDay()){
       renderLiveStatus(getLiveDay(), true);
+    } else if(currentMarket === 'nifty' && getNiftyLiveCache()){
+      renderNiftyLiveStatus(getNiftyLiveCache(), true);
+    } else if(currentMarket === 'mcx' && getMcxLiveDay()){
+      renderMcxLiveStatus(getMcxLiveDay(), true);
     } else {
       elStatus.textContent = 'Calculated from High ' + sym + fmt(high) + ' · Low ' + sym + fmt(low) + '.';
     }
@@ -1364,6 +1368,128 @@
     if(liveSpotTimer){ clearInterval(liveSpotTimer); liveSpotTimer = null; }
   }
 
+  // ---------- Live MCX & Nifty (via a small free JSON file hosted on the
+  // same GitHub Pages site, auto-refreshed every ~15 min by a GitHub Actions
+  // workflow -- because MCX/Nifty exchanges don't offer a free no-key
+  // browser-callable live API. Nifty comes from Yahoo Finance (Yahoo itself
+  // labels this a "Delayed Quote", not tick-by-tick live). MCX Gold comes
+  // from Metals.Dev and needs a free API key the user sets up themselves as
+  // a GitHub secret -- until that's done mcx_gold stays null and the app
+  // just says so, it never breaks. Never overwrites live-status text unless
+  // real data comes back; always falls back to manual entry safely. ------
+  var LIVE_JSON_URL = 'https://shivay51.github.io/live-prices.json';
+  var LIVE_JSON_POLL_MS = 90000; // ~90s -- cheap same-file poll; the file itself only changes ~every 15 min
+  var liveJsonTimer = null;
+
+  function getNiftyLiveCache(){
+    try{
+      var raw = localStorage.getItem('gold_sr_nifty_live');
+      if(raw){
+        var obj = JSON.parse(raw);
+        if(obj && obj.asOf && typeof obj.price === 'number'){
+          var d = new Date(obj.asOf);
+          var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+          var dd = ('0' + d.getDate()).slice(-2);
+          if((d.getFullYear() + '-' + mm + '-' + dd) === todayKeyLocal()) return obj;
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+  function saveNiftyLiveCache(obj){
+    try{ localStorage.setItem('gold_sr_nifty_live', JSON.stringify(obj)); }catch(e){}
+  }
+  function getMcxLiveDay(){
+    try{
+      var raw = localStorage.getItem('gold_sr_mcx_live_day');
+      if(raw){
+        var obj = JSON.parse(raw);
+        if(obj && obj.date === todayKeyLocal() && typeof obj.high === 'number' && typeof obj.low === 'number') return obj;
+      }
+    }catch(e){}
+    return null;
+  }
+  function saveMcxLiveDay(obj){
+    try{ localStorage.setItem('gold_sr_mcx_live_day', JSON.stringify(obj)); }catch(e){}
+  }
+  function applyMcxLivePrice(price){
+    var day = getMcxLiveDay();
+    if(!day){
+      day = { date: todayKeyLocal(), high: price, low: price, last: price, updatedAt: Date.now() };
+    } else {
+      day.high = Math.max(day.high, price);
+      day.low = Math.min(day.low, price);
+      day.last = price;
+      day.updatedAt = Date.now();
+    }
+    saveMcxLiveDay(day);
+    return day;
+  }
+  function renderNiftyLiveStatus(info, ok){
+    if(!elStatus) return;
+    if(ok && info){
+      var t = ''; try{ t = new Date(info.asOf).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'}); }catch(e){}
+      elStatus.innerHTML = '<span style="color:var(--support);font-weight:700;">&#9679; LIVE (delayed)</span> ' + fmt(info.price) + ' &middot; Yahoo Finance delayed quote &middot; refreshed ' + t;
+    } else {
+      elStatus.textContent = 'Nifty live price abhi setup ho rahyu che (thodi var ma aavi jashe) — manual High/Low use karo.';
+    }
+  }
+  function renderMcxLiveStatus(day, ok){
+    if(!elStatus) return;
+    if(ok && day){
+      var t = ''; try{ t = new Date(day.updatedAt).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'}); }catch(e){}
+      elStatus.innerHTML = '<span style="color:var(--support);font-weight:700;">&#9679; LIVE (delayed)</span> ₹' + fmt(day.last) + ' &middot; today H/L auto-tracked &middot; refreshed ' + t;
+    } else {
+      elStatus.textContent = 'MCX live price setup pending (API key baki che) — manual High/Low use karo.';
+    }
+  }
+  function fetchLiveJson(isInitial){
+    if(currentMarket !== 'mcx' && currentMarket !== 'nifty') return;
+    if(typeof fetch !== 'function') return;
+    fetch(LIVE_JSON_URL, {cache:'no-store'}).then(function(res){
+      if(!res.ok) throw new Error('bad status ' + res.status);
+      return res.json();
+    }).then(function(data){
+      if(currentMarket === 'nifty'){
+        var n = data && data.nifty;
+        if(n && typeof n.price === 'number'){
+          saveNiftyLiveCache(n);
+          if(elHigh && document.activeElement !== elHigh && typeof n.dayHigh === 'number'){ elHigh.value = n.dayHigh; }
+          if(elLow && document.activeElement !== elLow && typeof n.dayLow === 'number'){ elLow.value = n.dayLow; }
+          renderNiftyLiveStatus(n, true);
+          safeRecompute('live-nifty-' + (isInitial ? 'init' : 'poll'));
+        } else {
+          var cached = getNiftyLiveCache();
+          renderNiftyLiveStatus(cached, !!cached);
+        }
+      } else if(currentMarket === 'mcx'){
+        var m = data && data.mcx_gold;
+        if(m && typeof m.price === 'number'){
+          var day = applyMcxLivePrice(m.price);
+          if(elHigh && document.activeElement !== elHigh){ elHigh.value = day.high; }
+          if(elLow && document.activeElement !== elLow){ elLow.value = day.low; }
+          renderMcxLiveStatus(day, true);
+          safeRecompute('live-mcx-' + (isInitial ? 'init' : 'poll'));
+        } else {
+          renderMcxLiveStatus(getMcxLiveDay(), false);
+        }
+      }
+    }).catch(function(err){
+      d('live-json-ERR:' + (err && err.message ? err.message : err));
+      if(currentMarket === 'nifty'){ renderNiftyLiveStatus(getNiftyLiveCache(), !!getNiftyLiveCache()); }
+      else if(currentMarket === 'mcx'){ renderMcxLiveStatus(getMcxLiveDay(), false); }
+    });
+  }
+  function startLiveJson(){
+    if(currentMarket !== 'mcx' && currentMarket !== 'nifty') return;
+    if(liveJsonTimer) return;
+    fetchLiveJson(true);
+    liveJsonTimer = setInterval(function(){ fetchLiveJson(false); }, LIVE_JSON_POLL_MS);
+  }
+  function stopLiveJson(){
+    if(liveJsonTimer){ clearInterval(liveJsonTimer); liveJsonTimer = null; }
+  }
+
   function loadSaved(){
     if(currentMarket === 'spot'){
       var liveDay = getLiveDay();
@@ -1371,6 +1497,24 @@
         elHigh.value = liveDay.high;
         elLow.value = liveDay.low;
         renderLiveStatus(liveDay, true);
+        return;
+      }
+    }
+    if(currentMarket === 'nifty'){
+      var nc = getNiftyLiveCache();
+      if(nc){
+        if(typeof nc.dayHigh === 'number'){ elHigh.value = nc.dayHigh; }
+        if(typeof nc.dayLow === 'number'){ elLow.value = nc.dayLow; }
+        renderNiftyLiveStatus(nc, true);
+        return;
+      }
+    }
+    if(currentMarket === 'mcx'){
+      var mc = getMcxLiveDay();
+      if(mc){
+        elHigh.value = mc.high;
+        elLow.value = mc.low;
+        renderMcxLiveStatus(mc, true);
         return;
       }
     }
@@ -1414,7 +1558,9 @@
     loadSaved();
     recompute();
     updateMethodNote();
-    if(currentMarket === 'spot'){ startLiveSpot(); } else { stopLiveSpot(); }
+    if(currentMarket === 'spot'){ startLiveSpot(); stopLiveJson(); }
+    else if(currentMarket === 'mcx' || currentMarket === 'nifty'){ stopLiveSpot(); startLiveJson(); }
+    else { stopLiveSpot(); stopLiveJson(); }
   }
 
   function setupMarketToggle(){
@@ -1453,10 +1599,14 @@
     if(view === 'home'){
       if(elHeaderTitle){ elHeaderTitle.textContent = "Arjun's Alpha"; }
       if(elHeaderTagline){ elHeaderTagline.textContent = 'Home'; }
+      stopLiveSpot();
+      stopLiveJson();
     } else if(view === 'options'){
       if(elHeaderTitle){ elHeaderTitle.textContent = 'Options'; }
       if(elHeaderTagline){ elHeaderTagline.textContent = 'Update & settings'; }
       if(elUpdateStatus){ elUpdateStatus.textContent = ''; }
+      stopLiveSpot();
+      stopLiveJson();
     } else {
       setMarket(view);
       if(elHeaderTitle){ elHeaderTitle.textContent = MARKET_TITLES[view] || "Arjun's Alpha"; }
@@ -1674,11 +1824,13 @@
       if(document.visibilityState === 'hidden'){
         try{ localStorage.removeItem('gold_sr_loginAt'); }catch(e){}
         stopLiveSpot();
+        stopLiveJson();
       }
     });
     window.addEventListener('pagehide', function(){
       try{ localStorage.removeItem('gold_sr_loginAt'); }catch(e){}
       stopLiveSpot();
+      stopLiveJson();
     });
 
     checkUnlockParam();
