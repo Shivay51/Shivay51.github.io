@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-11-06T03:39:40Z",
+  "generatedAt": "2026-11-06T11:30:05Z",
   "nifty": {
-    "price": 24538.2,
-    "dayHigh": 24538.2,
-    "dayLow": 24538.2,
-    "prevClose": 23810.8,
-    "asOf": "2026-11-06T03:39:39Z",
+    "price": 25030.35,
+    "dayHigh": 25030.35,
+    "dayLow": 24388.05,
+    "prevClose": 23960.6,
+    "asOf": "2026-11-06T10:01:22Z",
     "source": "yahoo-delayed"
   },
   "mcx_gold": null
