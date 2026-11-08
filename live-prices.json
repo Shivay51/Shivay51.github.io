@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-11-08T16:14:59Z",
+  "generatedAt": "2026-11-08T20:30:50Z",
   "nifty": {
     "price": 24986.4,
     "dayHigh": 25131.85,
-    "dayLow": 24985.4,
+    "dayLow": 24985.3,
     "prevClose": 24536.6,
     "asOf": "2026-11-08T10:03:15Z",
     "source": "yahoo-delayed"
